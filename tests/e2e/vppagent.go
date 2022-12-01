@@ -21,10 +21,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/go-errors/errors"
-	"github.com/onsi/gomega"
 	"github.com/vishvananda/netns"
 	"go.ligato.io/cn-infra/v2/health/statuscheck/model/status"
 	"go.ligato.io/cn-infra/v2/logging"
@@ -41,11 +41,12 @@ import (
 )
 
 const (
-	agentImage       = "ligato/vpp-agent:latest"
-	agentLabelKey    = "e2e.test.vppagent"
-	agentNamePrefix  = "e2e-test-vppagent-"
-	agentInitTimeout = 15 // seconds
-	agentStopTimeout = 3  // seconds
+	agentImage               = "ligato/vpp-agent:latest"
+	agentLabelKey            = "e2e.test.vppagent"
+	agentNamePrefix          = "e2e-test-vppagent-"
+	agentInitTimeout         = 15 * time.Second
+	agentInitPollingInterval = 250 * time.Millisecond
+	agentStopTimeout         = 3 // seconds
 )
 
 var vppPingRegexp = regexp.MustCompile("Statistics: ([0-9]+) sent, ([0-9]+) received, ([0-9]+)% packet loss")
@@ -86,8 +87,10 @@ func NewAgent(ctx *TestCtx, name string, optMods ...AgentOptModifier) (*Agent, e
 	if err != nil {
 		return nil, errors.Errorf("can't create client for %s due to: %v", name, err)
 	}
-
-	agent.ctx.Eventually(agent.checkReady, agentInitTimeout, checkPollingInterval).Should(gomega.Succeed())
+	err = agent.checkReadyInterval(agentInitTimeout, agentInitPollingInterval)
+	// if err != nil {
+	// 	return nil, errors.Errorf("agent %s is not ready due to: %v", name, err)
+	// }
 	if opts.InitialResync {
 		agent.Sync()
 	}
@@ -251,6 +254,21 @@ func (agent *Agent) checkReady() error {
 		return fmt.Errorf("%s status: %v", agent.name, agentPlugin.State.String())
 	}
 	return nil
+}
+
+func (agent *Agent) checkReadyInterval(timeout, interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	err := fmt.Errorf("%s ready check timed out (%v)", agent.name, timeout)
+	for {
+		select {
+		case <-time.After(timeout):
+			return err
+		case <-ticker.C:
+			if err = agent.checkReady(); err == nil {
+				return nil
+			}
+		}
+	}
 }
 
 // ExecVppctl returns output from vppctl for given action and arguments.
