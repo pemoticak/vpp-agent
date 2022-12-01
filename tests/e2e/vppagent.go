@@ -88,9 +88,9 @@ func NewAgent(ctx *TestCtx, name string, optMods ...AgentOptModifier) (*Agent, e
 		return nil, errors.Errorf("can't create client for %s due to: %v", name, err)
 	}
 	err = agent.checkReadyInterval(agentInitTimeout, agentInitPollingInterval)
-	// if err != nil {
-	// 	return nil, errors.Errorf("agent %s is not ready due to: %v", name, err)
-	// }
+	if err != nil {
+		return nil, errors.Errorf("agent %s is not ready due to: %v", name, err)
+	}
 	if opts.InitialResync {
 		agent.Sync()
 	}
@@ -257,11 +257,12 @@ func (agent *Agent) checkReady() error {
 }
 
 func (agent *Agent) checkReadyInterval(timeout, interval time.Duration) error {
+	timer := time.After(timeout)
 	ticker := time.NewTicker(interval)
 	err := fmt.Errorf("%s ready check timed out (%v)", agent.name, timeout)
 	for {
 		select {
-		case <-time.After(timeout):
+		case <-timer:
 			return err
 		case <-ticker.C:
 			if err = agent.checkReady(); err == nil {
