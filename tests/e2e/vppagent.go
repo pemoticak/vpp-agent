@@ -89,7 +89,11 @@ func NewAgent(ctx *TestCtx, name string, optMods ...AgentOptModifier) (*Agent, e
 	}
 	err = agent.checkReadyInterval(agentInitTimeout, agentInitPollingInterval)
 	if err != nil {
-		return nil, errors.Errorf("agent %s is not ready due to: %v", name, err)
+		err = errors.Errorf("agent %s is not ready due to: %v", name, err)
+		if !opts.InitErrBypass {
+			return nil, err
+		}
+		ctx.t.Logf("agent %s was not initialized properly: %v", name, err)
 	}
 	if opts.InitialResync {
 		agent.Sync()

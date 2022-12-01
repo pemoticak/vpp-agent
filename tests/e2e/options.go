@@ -45,6 +45,7 @@ type AgentOpt struct {
 	Image               string
 	Env                 []string
 	UseEtcd             bool
+	InitErrBypass       bool
 	InitialResync       bool
 	ContainerOptsHook   func(*docker.CreateContainerOptions)
 }
@@ -184,6 +185,7 @@ func DefaultAgentOpt(testCtx *TestCtx, agentName string) *AgentOpt {
 		Name:                agentName,
 		Image:               agentImg,
 		UseEtcd:             false,
+		InitErrBypass:       false,
 		InitialResync:       true,
 		Env: []string{
 			"INITIAL_LOGLVL=" + logging.DefaultLogger.GetLevel().String(),
@@ -232,6 +234,12 @@ func WithEtcd(etcdOptMods ...EtcdOptModifier) SetupOptModifier {
 func WithDNSServer(dnsOpts ...DNSOptModifier) SetupOptModifier {
 	return func(o *SetupOpt) {
 		o.SetupDNSServer = true
+	}
+}
+
+func WithInitErrBypass() AgentOptModifier {
+	return func(o *AgentOpt) {
+		o.InitErrBypass = true
 	}
 }
 
