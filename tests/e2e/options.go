@@ -55,6 +55,7 @@ type MicroserviceOpt struct {
 	Runtime             ComponentRuntime
 	RuntimeStartOptions RuntimeStartOptionsFunc
 	Name                string
+	Pull                bool
 	ContainerOptsHook   func(*docker.CreateContainerOptions)
 }
 
@@ -158,6 +159,7 @@ func DefaultMicroserviceOpt(testCtx *TestCtx, msName string) *MicroserviceOpt {
 		},
 		RuntimeStartOptions: MicroserviceStartOptionsForContainerRuntime,
 		Name:                msName,
+		Pull:                true,
 	}
 }
 
@@ -300,6 +302,12 @@ func CreateFileOnSharedVolume(ctx *TestCtx, simpleFileName string, fileContent s
 func WithMSContainerStartHook(hook func(*docker.CreateContainerOptions)) MicroserviceOptModifier {
 	return func(opt *MicroserviceOpt) {
 		opt.ContainerOptsHook = hook
+	}
+}
+
+func WithoutPull() MicroserviceOptModifier {
+	return func(opt *MicroserviceOpt) {
+		opt.Pull = false
 	}
 }
 

@@ -115,7 +115,7 @@ func MicroserviceStartOptionsForContainerRuntime(ctx *TestCtx, options interface
 
 	return &ContainerStartOptions{
 		ContainerOptions: createOpts,
-		Pull:             true,
+		Pull:             opts.Pull,
 	}, nil
 }
 
