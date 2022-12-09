@@ -76,7 +76,7 @@ type TestCtx struct {
 	cancel context.CancelFunc
 
 	agents        map[string]*Agent
-	dockerClient  *docker.Client
+	DockerClient  *docker.Client
 	microservices map[string]*Microservice
 	nsCalls       nslinuxcalls.NetworkNamespaceAPI
 	vppVersion    string
@@ -182,17 +182,17 @@ func Setup(t *testing.T, optMods ...SetupOptModifier) *TestCtx {
 
 	// connect to the docker daemon
 	var err error
-	testCtx.dockerClient, err = docker.NewClientFromEnv()
+	testCtx.DockerClient, err = docker.NewClientFromEnv()
 	if err != nil {
 		t.Fatalf("failed to get docker client instance from the environment variables: %v", err)
 	}
 	if Debug {
-		t.Logf("Using docker client endpoint: %+v", testCtx.dockerClient.Endpoint())
+		t.Logf("Using docker client endpoint: %+v", testCtx.DockerClient.Endpoint())
 	}
 
 	// make sure there are no containers left from the previous run
-	removeDanglingAgents(t, testCtx.dockerClient)
-	removeDanglingMicroservices(t, testCtx.dockerClient)
+	removeDanglingAgents(t, testCtx.DockerClient)
+	removeDanglingMicroservices(t, testCtx.DockerClient)
 
 	// if setupE2E fails we need to stop started containers
 	defer func() {

@@ -109,7 +109,7 @@ func (c *ContainerRuntime) ExecCmd(cmd string, args ...string) (string, string, 
 		AttachStdout: true,
 		AttachStderr: true,
 	}
-	exec, err := c.ctx.dockerClient.CreateExec(opts)
+	exec, err := c.ctx.DockerClient.CreateExec(opts)
 	if err != nil {
 		err = errors.Errorf("failed to create docker exec for command %v due to: %v", cmd, err)
 		return "", "", err
@@ -119,7 +119,7 @@ func (c *ContainerRuntime) ExecCmd(cmd string, args ...string) (string, string, 
 	defer cancel()
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	err = c.ctx.dockerClient.StartExec(exec.ID, docker.StartExecOptions{
+	err = c.ctx.DockerClient.StartExec(exec.ID, docker.StartExecOptions{
 		Context:      ctx,
 		OutputStream: &stdoutBuf,
 		ErrorStream:  &stderrBuf,
@@ -140,7 +140,7 @@ func (c *ContainerRuntime) ExecCmd(cmd string, args ...string) (string, string, 
 		return stdout, stderr, err
 	}
 
-	if info, e := c.ctx.dockerClient.InspectExec(exec.ID); err != nil {
+	if info, e := c.ctx.DockerClient.InspectExec(exec.ID); err != nil {
 		c.ctx.t.Logf("exec inspect failed (ID %v, Cmd %s)s: %v", exec.ID, cmdStr, err)
 		err = errors.Errorf("inspect exec error: %v", e)
 	} else {
@@ -173,7 +173,7 @@ func (c *ContainerRuntime) createContainer(containerOptions *docker.CreateContai
 				"due to: %v", containerOptions.Config.Image, err)
 		}
 
-		err = c.ctx.dockerClient.PullImage(docker.PullImageOptions{
+		err = c.ctx.DockerClient.PullImage(docker.PullImageOptions{
 			Repository: repo,
 			Tag:        tag,
 		}, docker.AuthConfiguration{})
@@ -184,7 +184,7 @@ func (c *ContainerRuntime) createContainer(containerOptions *docker.CreateContai
 
 	// create container
 	var err error
-	c.container, err = c.ctx.dockerClient.CreateContainer(*containerOptions)
+	c.container, err = c.ctx.DockerClient.CreateContainer(*containerOptions)
 	if err != nil {
 		return nil, errors.Errorf("failed to create %s container: %v", c.logIdentity, err)
 	}
@@ -198,9 +198,9 @@ func (c *ContainerRuntime) startContainer() error {
 	}
 
 	// start container
-	err := c.ctx.dockerClient.StartContainer(c.container.ID, nil)
+	err := c.ctx.DockerClient.StartContainer(c.container.ID, nil)
 	if err != nil {
-		errRemove := c.ctx.dockerClient.RemoveContainer(docker.RemoveContainerOptions{
+		errRemove := c.ctx.DockerClient.RemoveContainer(docker.RemoveContainerOptions{
 			ID:    c.container.ID,
 			Force: true,
 		})
@@ -223,7 +223,7 @@ func (c *ContainerRuntime) startContainer() error {
 }
 
 func (c *ContainerRuntime) stopContainer() error {
-	err := c.ctx.dockerClient.StopContainer(c.container.ID, c.stopTimeout)
+	err := c.ctx.DockerClient.StopContainer(c.container.ID, c.stopTimeout)
 	if errors.Is(err, &docker.NoSuchContainer{}) {
 		return err
 	} else if err != nil {
@@ -233,7 +233,7 @@ func (c *ContainerRuntime) stopContainer() error {
 }
 
 func (c *ContainerRuntime) removeContainer() error {
-	err := c.ctx.dockerClient.RemoveContainer(docker.RemoveContainerOptions{
+	err := c.ctx.DockerClient.RemoveContainer(docker.RemoveContainerOptions{
 		ID:    c.container.ID,
 		Force: true,
 	})
@@ -249,7 +249,7 @@ func (c *ContainerRuntime) removeContainer() error {
 // the caller of this method how the log output can be handled. The only exception is the final container exit
 // status that is logged using stadard output.
 func (c *ContainerRuntime) attachLoggingToContainer(logOutput io.Writer) error {
-	closeWaiter, err := c.ctx.dockerClient.AttachToContainerNonBlocking(docker.AttachToContainerOptions{
+	closeWaiter, err := c.ctx.DockerClient.AttachToContainerNonBlocking(docker.AttachToContainerOptions{
 		Container:    c.container.ID,
 		Stdout:       true,
 		Stderr:       true,
@@ -278,7 +278,7 @@ func (c *ContainerRuntime) attachLoggingToContainer(logOutput io.Writer) error {
 }
 
 func (c *ContainerRuntime) inspectContainer(containerID string) (*docker.Container, error) {
-	container, err := c.ctx.dockerClient.InspectContainerWithOptions(docker.InspectContainerOptions{
+	container, err := c.ctx.DockerClient.InspectContainerWithOptions(docker.InspectContainerOptions{
 		Context: c.ctx.ctx,
 		ID:      containerID,
 	})
