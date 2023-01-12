@@ -16,6 +16,7 @@ package models
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/go-errors/errors"
 	"go.ligato.io/cn-infra/v2/logging"
@@ -23,17 +24,112 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
+// Thread safe map
+type Map[K comparable, V any] struct {
+	mu    sync.RWMutex
+	inner map[K]V
+}
+
+func NewMap[K comparable, V any]() *Map[K, V] {
+	m := &Map[K, V]{
+		inner: make(map[K]V),
+	}
+	return m
+}
+
+func (m *Map[K, V]) Put(key K, val V) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.inner[key] = val
+}
+
+func (m *Map[K, V]) Get(key K) (V, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	val, ok := m.inner[key]
+	return val, ok
+}
+
+func (m *Map[K, V]) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return len(m.inner)
+}
+
+func (m *Map[K, V]) Del(key K) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.inner, key)
+}
+
+type Broadcast[T any] struct {
+	mu          sync.RWMutex
+	source      <-chan T
+	subscribers []chan<- T
+}
+
+func NewBroadcast[T any](source <-chan T) *Broadcast[T] {
+	b := &Broadcast[T]{
+		source: source,
+	}
+	go b.serve()
+	return b
+}
+
+func (b *Broadcast[T]) Subscribe() <-chan T {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	ch := make(chan T, 1)
+	b.subscribers = append(b.subscribers, ch)
+	return ch
+}
+
+func (b *Broadcast[T]) serve() {
+	for val := range b.source {
+		b.broadcast(val)
+	}
+	b.close()
+}
+
+func (b *Broadcast[T]) broadcast(val T) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, sub := range b.subscribers {
+		sub <- val
+	}
+}
+
+func (b *Broadcast[T]) close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, sub := range b.subscribers {
+		close(sub)
+	}
+}
+
 // RemoteRegistry defines model registry for managing registered remote models. The remote model have no
 // included compiled code in program binary so only information available are from remote sources
 // (i.e. generic.Client's known models)
 type RemoteRegistry struct {
+	*Broadcast[KnownModel]
 	modelByName map[string]*RemotelyKnownModel
+	notifyCh    chan<- KnownModel
 }
 
 // NewRemoteRegistry returns initialized RemoteRegistry.
 func NewRemoteRegistry() *RemoteRegistry {
+	ch := make(chan KnownModel)
 	return &RemoteRegistry{
+		Broadcast:   NewBroadcast(ch),
 		modelByName: make(map[string]*RemotelyKnownModel),
+		notifyCh:    ch,
 	}
 }
 
@@ -136,5 +232,6 @@ func (r *RemoteRegistry) Register(model interface{}, spec Spec, opts ...ModelOpt
 	if debugRegister {
 		fmt.Printf("- remote model %s registered: %+v\n", remoteModel.Name(), remoteModel)
 	}
+	r.notifyCh <- remoteModel
 	return remoteModel, nil
 }

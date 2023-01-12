@@ -1,4 +1,4 @@
-package client
+package util
 
 import (
 	"fmt"
@@ -15,7 +15,6 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	"go.ligato.io/vpp-agent/v3/pkg/models"
-	"go.ligato.io/vpp-agent/v3/pkg/util"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/generic"
 )
 
@@ -42,44 +41,44 @@ type names struct {
 // dynamically-created Config to read/write configuration from/to json/yaml files in the same way as it is
 // for hardcoded configurator.Config.
 var backwardCompatibleNames = map[string]names{
-	"netallocConfig.IPAllocation":      names{protoName: "ip_addresses", jsonName: "ipAddresses"},
-	"linuxConfig.Interface":            names{protoName: "interfaces", jsonName: "interfaces"},
-	"linuxConfig.ARPEntry":             names{protoName: "arp_entries", jsonName: "arpEntries"},
-	"linuxConfig.Route":                names{protoName: "routes", jsonName: "routes"},
-	"linuxConfig.RuleChain":            names{protoName: "RuleChain", jsonName: "RuleChain"},
-	"vppConfig.ABF":                    names{protoName: "abfs", jsonName: "abfs"},
-	"vppConfig.ACL":                    names{protoName: "acls", jsonName: "acls"},
-	"vppConfig.SecurityPolicyDatabase": names{protoName: "ipsec_spds", jsonName: "ipsecSpds"},
-	"vppConfig.SecurityPolicy":         names{protoName: "ipsec_sps", jsonName: "ipsecSps"},
-	"vppConfig.SecurityAssociation":    names{protoName: "ipsec_sas", jsonName: "ipsecSas"},
-	"vppConfig.TunnelProtection":       names{protoName: "ipsec_tunnel_protections", jsonName: "ipsecTunnelProtections"},
-	"vppConfig.Interface":              names{protoName: "interfaces", jsonName: "interfaces"},
-	"vppConfig.Span":                   names{protoName: "spans", jsonName: "spans"},
-	"vppConfig.IPFIX":                  names{protoName: "ipfix_global", jsonName: "ipfixGlobal"},
-	"vppConfig.FlowProbeParams":        names{protoName: "ipfix_flowprobe_params", jsonName: "ipfixFlowprobeParams"},
-	"vppConfig.FlowProbeFeature":       names{protoName: "ipfix_flowprobes", jsonName: "ipfixFlowprobes"},
-	"vppConfig.BridgeDomain":           names{protoName: "bridge_domains", jsonName: "bridgeDomains"},
-	"vppConfig.FIBEntry":               names{protoName: "fibs", jsonName: "fibs"},
-	"vppConfig.XConnectPair":           names{protoName: "xconnect_pairs", jsonName: "xconnectPairs"},
-	"vppConfig.ARPEntry":               names{protoName: "arps", jsonName: "arps"},
-	"vppConfig.Route":                  names{protoName: "routes", jsonName: "routes"},
-	"vppConfig.ProxyARP":               names{protoName: "proxy_arp", jsonName: "proxyArp"},
-	"vppConfig.IPScanNeighbor":         names{protoName: "ipscan_neighbor", jsonName: "ipscanNeighbor"},
-	"vppConfig.VrfTable":               names{protoName: "vrfs", jsonName: "vrfs"},
-	"vppConfig.DHCPProxy":              names{protoName: "dhcp_proxies", jsonName: "dhcpProxies"},
-	"vppConfig.L3XConnect":             names{protoName: "l3xconnects", jsonName: "l3xconnects"},
-	"vppConfig.TeibEntry":              names{protoName: "teib_entries", jsonName: "teibEntries"},
-	"vppConfig.Nat44Global":            names{protoName: "nat44_global", jsonName: "nat44Global"},
-	"vppConfig.DNat44":                 names{protoName: "dnat44s", jsonName: "dnat44s"},
-	"vppConfig.Nat44Interface":         names{protoName: "nat44_interfaces", jsonName: "nat44Interfaces"},
-	"vppConfig.Nat44AddressPool":       names{protoName: "nat44_pools", jsonName: "nat44Pools"},
-	"vppConfig.IPRedirect":             names{protoName: "punt_ipredirects", jsonName: "puntIpredirects"},
-	"vppConfig.ToHost":                 names{protoName: "punt_tohosts", jsonName: "puntTohosts"},
-	"vppConfig.Exception":              names{protoName: "punt_exceptions", jsonName: "puntExceptions"},
-	"vppConfig.LocalSID":               names{protoName: "srv6_localsids", jsonName: "srv6Localsids"},
-	"vppConfig.Policy":                 names{protoName: "srv6_policies", jsonName: "srv6Policies"},
-	"vppConfig.Steering":               names{protoName: "srv6_steerings", jsonName: "srv6Steerings"},
-	"vppConfig.SRv6Global":             names{protoName: "srv6_global", jsonName: "srv6Global"},
+	"netallocConfig.IPAllocation":      {protoName: "ip_addresses", jsonName: "ipAddresses"},
+	"linuxConfig.Interface":            {protoName: "interfaces", jsonName: "interfaces"},
+	"linuxConfig.ARPEntry":             {protoName: "arp_entries", jsonName: "arpEntries"},
+	"linuxConfig.Route":                {protoName: "routes", jsonName: "routes"},
+	"linuxConfig.RuleChain":            {protoName: "RuleChain", jsonName: "RuleChain"},
+	"vppConfig.ABF":                    {protoName: "abfs", jsonName: "abfs"},
+	"vppConfig.ACL":                    {protoName: "acls", jsonName: "acls"},
+	"vppConfig.SecurityPolicyDatabase": {protoName: "ipsec_spds", jsonName: "ipsecSpds"},
+	"vppConfig.SecurityPolicy":         {protoName: "ipsec_sps", jsonName: "ipsecSps"},
+	"vppConfig.SecurityAssociation":    {protoName: "ipsec_sas", jsonName: "ipsecSas"},
+	"vppConfig.TunnelProtection":       {protoName: "ipsec_tunnel_protections", jsonName: "ipsecTunnelProtections"},
+	"vppConfig.Interface":              {protoName: "interfaces", jsonName: "interfaces"},
+	"vppConfig.Span":                   {protoName: "spans", jsonName: "spans"},
+	"vppConfig.IPFIX":                  {protoName: "ipfix_global", jsonName: "ipfixGlobal"},
+	"vppConfig.FlowProbeParams":        {protoName: "ipfix_flowprobe_params", jsonName: "ipfixFlowprobeParams"},
+	"vppConfig.FlowProbeFeature":       {protoName: "ipfix_flowprobes", jsonName: "ipfixFlowprobes"},
+	"vppConfig.BridgeDomain":           {protoName: "bridge_domains", jsonName: "bridgeDomains"},
+	"vppConfig.FIBEntry":               {protoName: "fibs", jsonName: "fibs"},
+	"vppConfig.XConnectPair":           {protoName: "xconnect_pairs", jsonName: "xconnectPairs"},
+	"vppConfig.ARPEntry":               {protoName: "arps", jsonName: "arps"},
+	"vppConfig.Route":                  {protoName: "routes", jsonName: "routes"},
+	"vppConfig.ProxyARP":               {protoName: "proxy_arp", jsonName: "proxyArp"},
+	"vppConfig.IPScanNeighbor":         {protoName: "ipscan_neighbor", jsonName: "ipscanNeighbor"},
+	"vppConfig.VrfTable":               {protoName: "vrfs", jsonName: "vrfs"},
+	"vppConfig.DHCPProxy":              {protoName: "dhcp_proxies", jsonName: "dhcpProxies"},
+	"vppConfig.L3XConnect":             {protoName: "l3xconnects", jsonName: "l3xconnects"},
+	"vppConfig.TeibEntry":              {protoName: "teib_entries", jsonName: "teibEntries"},
+	"vppConfig.Nat44Global":            {protoName: "nat44_global", jsonName: "nat44Global"},
+	"vppConfig.DNat44":                 {protoName: "dnat44s", jsonName: "dnat44s"},
+	"vppConfig.Nat44Interface":         {protoName: "nat44_interfaces", jsonName: "nat44Interfaces"},
+	"vppConfig.Nat44AddressPool":       {protoName: "nat44_pools", jsonName: "nat44Pools"},
+	"vppConfig.IPRedirect":             {protoName: "punt_ipredirects", jsonName: "puntIpredirects"},
+	"vppConfig.ToHost":                 {protoName: "punt_tohosts", jsonName: "puntTohosts"},
+	"vppConfig.Exception":              {protoName: "punt_exceptions", jsonName: "puntExceptions"},
+	"vppConfig.LocalSID":               {protoName: "srv6_localsids", jsonName: "srv6Localsids"},
+	"vppConfig.Policy":                 {protoName: "srv6_policies", jsonName: "srv6Policies"},
+	"vppConfig.Steering":               {protoName: "srv6_steerings", jsonName: "srv6Steerings"},
+	"vppConfig.SRv6Global":             {protoName: "srv6_global", jsonName: "srv6Global"},
 }
 
 // NewDynamicConfig creates dynamically proto Message that contains all given configuration models(knowModels).
@@ -138,7 +137,7 @@ func createFileDescRegistry(knownModels []*models.ModelInfo) (protodesc.Resolver
 // The constructed file descriptor proto is used to get file descriptor that in turn can be used to instantiate
 // proto message with all the configs from knownModels. This method conveniently provides also the configuration
 // root message (proto file has many messages, but we need to know which one is the root for our configuration).
-func createDynamicConfigDescriptorProto(knownModels []*ModelInfo, dependencyRegistry protodesc.Resolver) (
+func createDynamicConfigDescriptorProto(knownModels []*models.ModelInfo, dependencyRegistry protodesc.Resolver) (
 	fileDP *descriptorpb.FileDescriptorProto, rootMsgName protoreflect.Name, error error) {
 
 	// file descriptor proto for dynamic config proto model
@@ -234,17 +233,23 @@ func createDynamicConfigDescriptorProto(knownModels []*ModelInfo, dependencyRegi
 	return
 }
 
+func JsonModelKeyPrefix(modelDetail *models.ModelInfo) string {
+	jsonGroupName := DynamicConfigGroupFieldNaming(modelDetail)
+	_, jsonProtoName := DynamicConfigKnownModelFieldNaming(modelDetail)
+	return fmt.Sprintf("%s.%s", jsonGroupName, jsonProtoName)
+}
+
 // DynamicConfigGroupFieldNaming computes for given known model the naming of configuration group proto field
 // containing the instances of given model inside the dynamic config describing the whole VPP-Agent configuration.
 // The json name of the field is the same as proto name of field.
 func DynamicConfigGroupFieldNaming(modelDetail *models.ModelInfo) string {
-	return fmt.Sprintf("%v%v", modulePrefix(models.ToSpec(modelDetail.Spec).ModelName()), configGroupSuffix)
+	return fmt.Sprintf("%v%v", ModulePrefix(models.ToSpec(modelDetail.Spec).ModelName()), configGroupSuffix)
 }
 
 // DynamicConfigKnownModelFieldNaming compute for given known model the (proto and json) naming of proto field
 // containing the instances of given model inside the dynamic config describing the whole VPP-Agent configuration.
 func DynamicConfigKnownModelFieldNaming(modelDetail *models.ModelInfo) (protoName, jsonName string) {
-	simpleProtoName := simpleProtoName(modelDetail.ProtoName)
+	simpleProtoName := SimpleProtoName(modelDetail.ProtoName)
 	configGroupName := DynamicConfigGroupFieldNaming(modelDetail)
 	compatibilityKey := fmt.Sprintf("%v.%v", configGroupName, simpleProtoName)
 
@@ -294,7 +299,7 @@ func ExportDynamicConfigStructure(dynamicConfig proto.Message) (string, error) {
 	// fill dynamic message with nothing (one proto message that will not map to anything), but relaying
 	// on side effect that will fill the structure with empty messages
 	anyProtoMessage := []proto.Message{&generic.Item{}}
-	util.PlaceProtosIntoProtos(anyProtoMessage, 1000, dynamicConfig)
+	PlaceProtosIntoProtos(anyProtoMessage, 1000, dynamicConfig)
 
 	// export dynamic config to json and then into yaml format
 	m := protojson.MarshalOptions{
@@ -342,7 +347,7 @@ func exportFromConfigGroupMessage(configGroupMessage protoreflect.Message) []pro
 	return result
 }
 
-func simpleProtoName(fullProtoName string) string {
+func SimpleProtoName(fullProtoName string) string {
 	nameSplit := strings.Split(fullProtoName, ".")
 	return nameSplit[len(nameSplit)-1]
 }
@@ -369,7 +374,7 @@ func existsModelOptionFor(key string, options []*generic.ModelDetail_Option) boo
 	return err == nil
 }
 
-func modulePrefix(modelName string) string {
+func ModulePrefix(modelName string) string {
 	return strings.Split(modelName, ".")[0] // modelname = modulname(it has modulname prefix) + simple name of model
 }
 

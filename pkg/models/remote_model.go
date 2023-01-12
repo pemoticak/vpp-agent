@@ -43,6 +43,11 @@ func (m *RemotelyKnownModel) Spec() *Spec {
 	return &spec
 }
 
+// Info returns model information for the model.
+func (m *RemotelyKnownModel) Info() *ModelInfo {
+	return m.model
+}
+
 // ModelDetail returns descriptor for the model.
 func (m *RemotelyKnownModel) ModelDetail() *api.ModelDetail {
 	return m.model.ModelDetail

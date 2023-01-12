@@ -58,7 +58,7 @@ func (c *grpcClient) KnownModels(class string) ([]*client.ModelInfo, error) {
 	// extract proto files for meta service known models
 	protoFilePaths := make(map[string]struct{}) // using map as set for deduplication
 	for _, modelDetail := range knownModels {
-		protoFilePath, err := client.ModelOptionFor("protoFile", modelDetail.Options)
+		protoFilePath, err := util.ModelOptionFor("protoFile", modelDetail.Options)
 		if err != nil {
 			return nil, fmt.Errorf("cannot get protoFile from model options of "+
 				"known model %v due to: %w", modelDetail.ProtoName, err)

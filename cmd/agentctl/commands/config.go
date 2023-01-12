@@ -36,6 +36,7 @@ import (
 	"go.ligato.io/vpp-agent/v3/client"
 	"go.ligato.io/vpp-agent/v3/cmd/agentctl/api/types"
 	agentcli "go.ligato.io/vpp-agent/v3/cmd/agentctl/cli"
+	"go.ligato.io/vpp-agent/v3/pkg/util"
 	kvs "go.ligato.io/vpp-agent/v3/plugins/kvscheduler/api"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/configurator"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/kvscheduler"
@@ -99,7 +100,7 @@ func runConfigGet(cli agentcli.Cli, opts ConfigGetOptions) error {
 	if err != nil {
 		return fmt.Errorf("getting registered models: %w", err)
 	}
-	config, err := client.NewDynamicConfig(knownModels)
+	config, err := util.NewDynamicConfig(knownModels)
 	if err != nil {
 		return fmt.Errorf("can't create all-config proto message dynamically due to: %w", err)
 	}
@@ -192,7 +193,7 @@ func runConfigUpdate(cli agentcli.Cli, opts ConfigUpdateOptions, args []string) 
 	if err != nil {
 		return fmt.Errorf("getting registered models: %w", err)
 	}
-	config, err := client.NewDynamicConfig(knownModels)
+	config, err := util.NewDynamicConfig(knownModels)
 	if err != nil {
 		return fmt.Errorf("can't create all-config proto message dynamically due to: %w", err)
 	}
@@ -211,7 +212,7 @@ func runConfigUpdate(cli agentcli.Cli, opts ConfigUpdateOptions, args []string) 
 
 	// extracting proto messages from dynamically created config structure
 	// (generic client wants single proto messages and not one big hierarchical config)
-	configMessages, err := client.DynamicConfigExport(config)
+	configMessages, err := util.DynamicConfigExport(config)
 	if err != nil {
 		return fmt.Errorf("can't extract single configuration proto messages "+
 			"from one big configuration proto message due to: %v", err)

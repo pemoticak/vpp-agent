@@ -15,8 +15,8 @@
 package localregistry
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -32,7 +32,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.ligato.io/vpp-agent/v3/client"
+	"go.ligato.io/vpp-agent/v3/pkg/models"
+	"go.ligato.io/vpp-agent/v3/pkg/util"
 	"go.ligato.io/vpp-agent/v3/plugins/orchestrator"
+	"go.ligato.io/vpp-agent/v3/proto/ligato/generic"
 )
 
 const (
@@ -50,22 +53,22 @@ type Option func(*InitFileRegistry)
 // inside given file after initial content loading.
 //
 // The NB configuration provisioning process and how this registry fits into it:
-// 	1. NB data sources register to default resync plugin (InitFileRegistry registers too in watchNBResync(),
-//	   but only when there are some NB config data from file, otherwise it makes no sense to register because
-//	   there is nothing to forward. This also means that before register to resync plugin, the NB config from
-//	   file will be preloaded)
-// 	2. Call to resync plugin's DoResync triggers resync to NB configuration sources (InitFileRegistry takes
-//	   its preloaded NB config and stores it into another inner local registry)
-// 	3. NB configuration sources are also watchable (datasync.KeyValProtoWatcher) and the resync data is
-//	   collected by the watcher.Aggregator (InitFileRegistry is also watchable/forwards data to watcher.Aggregator,
-//	   it relies on the watcher capabilities of its inner local registry. This is the cause why to preloaded
-//	   the NB config from file([]proto.Message storage) and push it to another inner local storage later
-//	   (syncbase.Registry). If we used only one storage (syncbase.Registry for its watch capabilities), we
-//	   couldn't answer some questins about the storage soon enough (watcher.Aggregator in Watch(...) needs to
-//	   know whether this storage will send some data or not, otherwise the retrieval can hang on waiting for
-//	   data that never come))
-// 	4. watcher.Aggregator merges all collected resync data and forwards them its watch clients (it also implements
-//	   datasync.KeyValProtoWatcher just like the NB data sources).
+//  1. NB data sources register to default resync plugin (InitFileRegistry registers too in watchNBResync(),
+//     but only when there are some NB config data from file, otherwise it makes no sense to register because
+//     there is nothing to forward. This also means that before register to resync plugin, the NB config from
+//     file will be preloaded)
+//  2. Call to resync plugin's DoResync triggers resync to NB configuration sources (InitFileRegistry takes
+//     its preloaded NB config and stores it into another inner local registry)
+//  3. NB configuration sources are also watchable (datasync.KeyValProtoWatcher) and the resync data is
+//     collected by the watcher.Aggregator (InitFileRegistry is also watchable/forwards data to watcher.Aggregator,
+//     it relies on the watcher capabilities of its inner local registry. This is the cause why to preloaded
+//     the NB config from file([]proto.Message storage) and push it to another inner local storage later
+//     (syncbase.Registry). If we used only one storage (syncbase.Registry for its watch capabilities), we
+//     couldn't answer some questins about the storage soon enough (watcher.Aggregator in Watch(...) needs to
+//     know whether this storage will send some data or not, otherwise the retrieval can hang on waiting for
+//     data that never come))
+//  4. watcher.Aggregator merges all collected resync data and forwards them its watch clients (it also implements
+//     datasync.KeyValProtoWatcher just like the NB data sources).
 //  5. Clients of Aggregator (currently orchestrator and ifplugin) handle the NB changes/resync properly.
 type InitFileRegistry struct {
 	infra.PluginDeps
@@ -157,6 +160,10 @@ func (r *InitFileRegistry) initialize() error {
 			// watch for resync.DefaultPlugin.DoResync() that will trigger pushing of preloaded
 			// NB config data from file into NB aggregator watcher
 			// (see InitFileRegistry struct docs for detailed explanation)
+			for _, item := range r.preloadedNBConfigs {
+				key, err := models.GetKey(item)
+				r.Log.Infof("preloadedNBConfig key, val, err: (%v, %v, err)", key, item, err)
+			}
 			r.watchNBResync()
 		}
 	}
@@ -230,43 +237,59 @@ func (r *InitFileRegistry) preloadNBConfigs(filePath string) error {
 	}
 
 	// read data from file
-	b, err := ioutil.ReadFile(filePath)
+	b, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("problem reading file %s: %w", filePath, err)
-	}
-
-	// create dynamic config (using it instead of configurator.Config because it can hold also models defined
-	// outside the VPP-Agent repo, i.e. if this code is using 3rd party code based on VPP-Agent and having its
-	// additional properly registered configuration models)
-	knownModels, err := client.LocalClient.KnownModels("config") // locally registered models
-	if err != nil {
-		return fmt.Errorf("cannot get registered models: %w", err)
-	}
-	cfg, err := client.NewDynamicConfig(knownModels)
-	if err != nil {
-		return fmt.Errorf("cannot create dynamic config due to: %w", err)
 	}
 
 	// filling dynamically created config with data from NB init file
 	bj, err := yaml2.YAMLToJSON(b)
 	if err != nil {
-		return fmt.Errorf("cannot converting to JSON: %w", err)
+		return fmt.Errorf("cannot convert YAML init file to JSON due to: %w", err)
 	}
-	err = protojson.Unmarshal(bj, cfg)
+	var m map[string]map[string][]json.RawMessage
+	err = json.Unmarshal(bj, &m)
 	if err != nil {
-		return fmt.Errorf("cannot unmarshall init file data into dynamic config due to: %w", err)
+		return fmt.Errorf("cannot unmarshal init file JSON data due to: %w", err)
 	}
 
-	// extracting proto messages from dynamic config structure
-	// (generic client wants single proto messages and not one big hierarchical config)
-	configMessages, err := client.DynamicConfigExport(cfg)
-	if err != nil {
-		return fmt.Errorf("cannot extract single init configuration proto messages "+
-			"from one big configuration proto message due to: %w", err)
+	// key has the form of two "topmost" fields of JSON config
+	modelVal := make(map[string][]json.RawMessage)
+	for groupName, inner := range m {
+		for protoName, val := range inner {
+			key := fmt.Sprintf("%s.%s", groupName, protoName)
+			modelVal[key] = val
+		}
 	}
 
-	// remember extracted data for later push to watched registry
-	r.preloadedNBConfigs = configMessages
+	knownModels := models.RegisteredModels()
+	for _, km := range knownModels {
+		key := util.JsonModelKeyPrefix(km.Info())
+		rawMsgs, ok := modelVal[key]
+		if !ok {
+			continue
+		}
+		for _, rawMsg := range rawMsgs {
+			msg := km.NewInstance()
+			r.Log.Infof("raw message: %s", string(rawMsg))
+			err = protojson.Unmarshal(rawMsg, msg)
+			if err != nil {
+				return fmt.Errorf("cannot unmarshal init file JSON data into config proto message due to: %w", err)
+			}
+			r.preloadedNBConfigs = append(r.preloadedNBConfigs, msg)
+		}
+		delete(modelVal, key)
+	}
+
+	for key, rawMsgs := range modelVal {
+		for _, rawMsg := range rawMsgs {
+			deferred := &generic.DeferredItem{
+				Key:  key,
+				Data: []byte(rawMsg),
+			}
+			r.preloadedNBConfigs = append(r.preloadedNBConfigs, deferred)
+		}
+	}
 
 	return nil
 }

@@ -27,9 +27,11 @@ import (
 	"go.ligato.io/cn-infra/v2/logging"
 	"go.ligato.io/cn-infra/v2/rpc/grpc"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"go.ligato.io/vpp-agent/v3/pkg/models"
+	"go.ligato.io/vpp-agent/v3/pkg/util"
 	kvs "go.ligato.io/vpp-agent/v3/plugins/kvscheduler/api"
 	"go.ligato.io/vpp-agent/v3/plugins/orchestrator/contextdecorator"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/generic"
@@ -52,10 +54,15 @@ type Plugin struct {
 
 	reflection bool
 
+	deferredConfig *models.Map[string, []datasync.LazyValue]
+
 	// datasync channels
-	changeChan   chan datasync.ChangeEvent
-	resyncChan   chan datasync.ResyncEvent
-	watchDataReg datasync.WatchRegistration
+	allChangeCh     chan datasync.ChangeEvent
+	allResyncCh     chan datasync.ResyncEvent
+	watchAllDataReg datasync.WatchRegistration
+
+	modelRegCh <-chan models.KnownModel
+	statusCh   chan *kvscheduler.BaseValueStatus
 
 	wg   sync.WaitGroup
 	quit chan struct{}
@@ -101,47 +108,41 @@ func (p *Plugin) Init() (err error) {
 		p.log.Infof("grpc server is not available")
 	}
 
+	p.deferredConfig = models.NewMap[string, []datasync.LazyValue]()
+	p.modelRegCh = models.DefaultRegistry.Subscribe()
 	p.Log.Infof("Found %d registered models", len(models.RegisteredModels()))
 	for _, model := range models.RegisteredModels() {
 		p.debugf("- model: %+v", *model.Spec())
 	}
 
-	var prefixes []string
-	if nbPrefixes := p.kvs.GetRegisteredNBKeyPrefixes(); len(nbPrefixes) > 0 {
-		p.log.Infof("Watching %d key prefixes from KVScheduler", len(nbPrefixes))
-		for _, prefix := range nbPrefixes {
-			p.debugf("- prefix: %s", prefix)
-			prefixes = append(prefixes, prefix)
-		}
-	} else {
-		p.log.Warnf("No key prefixes found in KVScheduler (ensure that all KVDescriptors are registered before this)")
-	}
-
 	// initialize datasync channels
-	p.resyncChan = make(chan datasync.ResyncEvent)
-	p.changeChan = make(chan datasync.ChangeEvent)
+	p.allResyncCh = make(chan datasync.ResyncEvent)
+	p.allChangeCh = make(chan datasync.ChangeEvent)
 
-	p.watchDataReg, err = p.Watcher.Watch(p.PluginName.String(),
-		p.changeChan, p.resyncChan, prefixes...)
+	p.watchAllDataReg, err = p.Watcher.Watch("everything", p.allChangeCh, p.allResyncCh, "")
 	if err != nil {
 		return err
 	}
+
+	p.statusCh = make(chan *kvscheduler.BaseValueStatus, 100)
+	p.kvs.WatchValueStatus(p.statusCh, nil)
 
 	return nil
 }
 
 // AfterInit subscribes to known NB prefixes.
 func (p *Plugin) AfterInit() (err error) {
+	// watch new model registrations and apply deferred config
+	p.wg.Add(1)
+	go p.watchModelKeys()
+
 	// watch datasync events
 	p.wg.Add(1)
-	go p.watchEvents()
+	go p.watchAllEvents()
 
-	statusChan := make(chan *kvscheduler.BaseValueStatus, 100)
-	p.kvs.WatchValueStatus(statusChan, nil)
-
-	// watch KVSchedular status changes
+	// watch KVScheduler status changes
 	p.wg.Add(1)
-	go p.watchStatus(statusChan)
+	go p.watchStatus()
 
 	return nil
 }
@@ -171,99 +172,162 @@ func (p *Plugin) InitialSync() error {
 	return nil
 }
 
-func (p *Plugin) watchEvents() {
+func (p *Plugin) watchModelKeys() {
 	defer p.wg.Done()
-
-	p.Log.Debugf("watching datasync events")
-	defer p.Log.Debugf("done watching datasync events")
 
 	for {
 		select {
-		case e := <-p.changeChan:
-			p.log.Debugf("=> received CHANGE event (%v changes)", len(e.GetChanges()))
+		case m := <-p.modelRegCh:
+			prefix := m.Spec().KeyPrefix()
+			p.log.Debugf("=> received model registration event (model: %v, key prefix: %v)\n", m, prefix)
+			jsonPrefix := util.JsonModelKeyPrefix(m.Info())
+			prefixVals, _ := p.deferredConfig.Get(prefix)
+			jsonPrefixVals, _ := p.deferredConfig.Get(jsonPrefix)
+			var lazyVals []datasync.LazyValue
+			lazyVals = append(lazyVals, prefixVals...)
+			lazyVals = append(lazyVals, jsonPrefixVals...)
+			var kvPairs []KeyVal
+			for _, lv := range lazyVals {
+				val := m.NewInstance()
+				deferred := &generic.DeferredItem{}
+				lv.GetValue(deferred)
+				data := deferred.GetData()
+				err := protojson.Unmarshal(data, val)
+				// TODO: better error handling
+				if err != nil {
+				}
+				kv := KeyVal{
+					Key: models.Key(val),
+					Val: val,
+				}
+				kvPairs = append(kvPairs, kv)
+			}
+			ctx := context.Background()
+			_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)
+			if !withDataSrc {
+				ctx = contextdecorator.DataSrcContext(ctx, "datasync")
+			}
+			ctx = kvs.WithRetryDefault(ctx)
+			res, err := p.PushData(ctx, kvPairs, nil)
+			if err == nil {
+				ctx = contextdecorator.PushDataResultContext(ctx, ResultWrapper{Results: res})
+			}
+		case <-p.quit:
+			return
+		}
+	}
+}
+
+func (p *Plugin) deferResp(resp datasync.KeyVal) {
+	p.log.Errorf("=> deferring response (key: %v, resp: %v)\n", resp.GetKey(), resp)
+	dc, _ := p.deferredConfig.Get(resp.GetKey())
+	p.deferredConfig.Put(resp.GetKey(), append(dc, resp))
+}
+
+func (p *Plugin) watchAllEvents() {
+	defer p.wg.Done()
+
+	p.Log.Debugf("watching all datasync events")
+	defer p.Log.Debugf("done watching all datasync events")
+
+	for {
+		select {
+		case ev := <-p.allChangeCh:
+			p.log.Debugf("=> received CHANGE event (%v changes)", len(ev.GetChanges()))
 
 			var err error
 			var kvPairs []KeyVal
-			keyLabels := make(map[string]Labels)
 
-			ctx := e.GetContext()
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			labels, ok := contextdecorator.LabelsFromContext(ctx)
-			if !ok {
-				labels = Labels{}
-			}
-
-			for _, x := range e.GetChanges() {
-				key := x.GetKey()
+			for _, resp := range ev.GetChanges() {
+				key := resp.GetKey()
+				p.log.Infof("event key gotten: ( %v )", key)
+				model, err := models.GetModelForKey(key)
+				if err != nil {
+					// model not found, defer this response for later when the model gets registered
+					p.log.Infof("deferring response (resp: %v)", resp)
+					p.deferResp(resp)
+					continue
+				}
+				val := model.NewInstance()
+				if err := resp.GetValue(val); err != nil {
+					p.log.Errorf("decoding value for key %q failed: %v", key, err)
+					continue
+				}
 				kv := KeyVal{
 					Key: key,
-				}
-				if x.GetChangeType() != datasync.Delete {
-					kv.Val, err = UnmarshalLazyValue(kv.Key, x)
-					if err != nil {
-						p.log.Errorf("decoding value for key %q failed: %v", kv.Key, err)
-						continue
-					}
+					Val: val,
 				}
 				kvPairs = append(kvPairs, kv)
-				keyLabels[key] = labels
 			}
 
 			if len(kvPairs) == 0 {
-				p.log.Warn("no valid kv pairs received in change event")
-				e.Done(nil)
+				p.log.Warn("no valid kv pairs received in change event (pairs: %v)", kvPairs)
+				ev.Done(nil)
 				continue
 			}
 
 			p.log.Debugf("Change with %d items", len(kvPairs))
+
+			ctx := ev.GetContext()
+			if ctx == nil {
+				ctx = context.Background()
+			}
 
 			_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)
 			if !withDataSrc {
 				ctx = contextdecorator.DataSrcContext(ctx, "datasync")
 			}
 			ctx = kvs.WithRetryDefault(ctx)
-			res, err := p.PushData(ctx, kvPairs, keyLabels)
+			res, err := p.PushData(ctx, kvPairs, nil)
 			if err == nil {
 				ctx = contextdecorator.PushDataResultContext(ctx, ResultWrapper{Results: res})
 			}
-			e.Done(err)
+			ev.Done(err)
 
-		case e := <-p.resyncChan:
-			p.log.Debugf("=> received RESYNC event (%v prefixes)", len(e.GetValues()))
+		case ev := <-p.allResyncCh:
+			p.log.Debugf("=> received RESYNC event (%v prefixes)", len(ev.GetValues()))
 
 			var kvPairs []KeyVal
 
-			for prefix, iter := range e.GetValues() {
+			for prefix, iter := range ev.GetValues() {
 				var keyVals []datasync.KeyVal
-				for x, done := iter.GetNext(); !done; x, done = iter.GetNext() {
-					key := x.GetKey()
-					val, err := UnmarshalLazyValue(key, x)
+				for resp, done := iter.GetNext(); !done; resp, done = iter.GetNext() {
+					key := resp.GetKey()
+					p.log.Errorf("resp: %v", resp)
+					p.log.Infof("event key gotten: ( %v )", key)
+					model, err := models.GetModelForKey(key)
 					if err != nil {
-						p.log.Errorf("unmarshal value for key %q failed: %v", key, err)
+						// model not found, defer this response for later when the model gets registered
+						p.log.Infof("deferring response (resp: %v)", resp)
+						p.deferResp(resp)
 						continue
 					}
-					kvPairs = append(kvPairs, KeyVal{
+					val := model.NewInstance()
+					if err := resp.GetValue(val); err != nil {
+						p.log.Errorf("decoding value for key %q failed: %v", key, err)
+						continue
+					}
+					kv := KeyVal{
 						Key: key,
 						Val: val,
-					})
-					p.log.Debugf(" -- key: %s", x.GetKey())
-					keyVals = append(keyVals, x)
+					}
+					p.log.Debugf(" -- key: %s", resp.GetKey())
+					kvPairs = append(kvPairs, kv)
+					keyVals = append(keyVals, resp)
 				}
 				if len(keyVals) > 0 {
 					p.log.Debugf("- %q (%v items)", prefix, len(keyVals))
 				} else {
 					p.log.Debugf("- %q (no items)", prefix)
 				}
-				for _, x := range keyVals {
-					p.log.Debugf("\t - %q: (rev: %v)", x.GetKey(), x.GetRevision())
+				for _, resp := range keyVals {
+					p.log.Debugf("\t - %q: (rev: %v)", resp.GetKey(), resp.GetRevision())
 				}
 			}
 
 			p.log.Debugf("Resync with %d items", len(kvPairs))
 
-			ctx := e.GetContext()
+			ctx := ev.GetContext()
 			if ctx == nil {
 				ctx = context.Background()
 			}
@@ -278,7 +342,7 @@ func (p *Plugin) watchEvents() {
 			if err == nil {
 				ctx = contextdecorator.PushDataResultContext(ctx, ResultWrapper{Results: res})
 			}
-			e.Done(err)
+			ev.Done(err)
 
 		case <-p.quit:
 			return
@@ -286,7 +350,122 @@ func (p *Plugin) watchEvents() {
 	}
 }
 
-func (p *Plugin) watchStatus(ch <-chan *kvscheduler.BaseValueStatus) {
+// func (p *Plugin) watchEvents() {
+// 	defer p.wg.Done()
+
+// 	p.Log.Debugf("watching datasync events")
+// 	defer p.Log.Debugf("done watching datasync events")
+
+// 	for {
+// 		select {
+// 		case e := <-p.changeChan:
+// 			p.log.Debugf("=> received CHANGE event (%v changes)", len(e.GetChanges()))
+
+// 			var err error
+// 			var kvPairs []KeyVal
+// 			keyLabels := make(map[string]Labels)
+
+// 			ctx := e.GetContext()
+// 			if ctx == nil {
+// 				ctx = context.Background()
+// 			}
+// 			labels, ok := contextdecorator.LabelsFromContext(ctx)
+// 			if !ok {
+// 				labels = Labels{}
+// 			}
+
+// 			for _, x := range e.GetChanges() {
+// 				key := x.GetKey()
+// 				kv := KeyVal{
+// 					Key: key,
+// 				}
+// 				if x.GetChangeType() != datasync.Delete {
+// 					kv.Val, err = p.unmarshalLazyValue(kv.Key, x)
+// 					if err != nil {
+// 						p.log.Errorf("decoding value for key %q failed: %v", kv.Key, err)
+// 						continue
+// 					}
+// 				}
+// 				kvPairs = append(kvPairs, kv)
+// 				keyLabels[key] = labels
+// 			}
+
+// 			if len(kvPairs) == 0 {
+// 				p.log.Warn("no valid kv pairs received in change event")
+// 				e.Done(nil)
+// 				continue
+// 			}
+
+// 			p.log.Debugf("Change with %d items", len(kvPairs))
+
+// 			_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)
+// 			if !withDataSrc {
+// 				ctx = contextdecorator.DataSrcContext(ctx, "datasync")
+// 			}
+// 			ctx = kvs.WithRetryDefault(ctx)
+// 			res, err := p.PushData(ctx, kvPairs, keyLabels)
+// 			if err == nil {
+// 				ctx = contextdecorator.PushDataResultContext(ctx, ResultWrapper{Results: res})
+// 			}
+// 			e.Done(err)
+
+// 		case e := <-p.resyncChan:
+// 			p.log.Debugf("=> received RESYNC event (%v prefixes)", len(e.GetValues()))
+
+// 			var kvPairs []KeyVal
+
+// 			for prefix, iter := range e.GetValues() {
+// 				var keyVals []datasync.KeyVal
+// 				for x, done := iter.GetNext(); !done; x, done = iter.GetNext() {
+// 					key := x.GetKey()
+// 					val, err := p.unmarshalLazyValue(key, x)
+// 					if err != nil {
+// 						p.log.Errorf("unmarshal value for key %q failed: %v", key, err)
+// 						continue
+// 					}
+// 					kvPairs = append(kvPairs, KeyVal{
+// 						Key: key,
+// 						Val: val,
+// 					})
+// 					p.log.Debugf(" -- key: %s", x.GetKey())
+// 					keyVals = append(keyVals, x)
+// 				}
+// 				if len(keyVals) > 0 {
+// 					p.log.Debugf("- %q (%v items)", prefix, len(keyVals))
+// 				} else {
+// 					p.log.Debugf("- %q (no items)", prefix)
+// 				}
+// 				for _, x := range keyVals {
+// 					p.log.Debugf("\t - %q: (rev: %v)", x.GetKey(), x.GetRevision())
+// 				}
+// 			}
+
+// 			p.log.Debugf("Resync with %d items", len(kvPairs))
+
+// 			ctx := e.GetContext()
+// 			if ctx == nil {
+// 				ctx = context.Background()
+// 			}
+// 			_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)
+// 			if !withDataSrc {
+// 				ctx = contextdecorator.DataSrcContext(ctx, "datasync")
+// 			}
+// 			ctx = kvs.WithResync(ctx, kvs.FullResync, true)
+// 			ctx = kvs.WithRetryDefault(ctx)
+
+// 			res, err := p.PushData(ctx, kvPairs, nil)
+// 			if err == nil {
+// 				ctx = contextdecorator.PushDataResultContext(ctx, ResultWrapper{Results: res})
+// 			}
+// 			e.Done(err)
+
+// 		case <-p.quit:
+// 			return
+// 		}
+// 	}
+// }
+
+func (p *Plugin) watchStatus() {
 	defer p.wg.Done()
 
 	p.Log.Debugf("watching status changes")
@@ -294,7 +473,7 @@ func (p *Plugin) watchStatus(ch <-chan *kvscheduler.BaseValueStatus) {
 
 	for {
 		select {
-		case s := <-ch:
+		case s := <-p.statusCh:
 			p.debugf("incoming status change: %15s %v ===> %v (%v) %v",
 				s.Value.State, s.Value.Details, s.Value.Key, s.Value.LastOperation, s.Value.Error)
 			for _, dv := range s.DerivedValues {
@@ -338,8 +517,8 @@ func (p *Plugin) debugf(f string, a ...interface{}) {
 	}
 }
 
-// UnmarshalLazyValue is helper function for unmarshalling from datasync.LazyValue.
-func UnmarshalLazyValue(key string, lazy datasync.LazyValue) (proto.Message, error) {
+// unmarshalLazyValue is helper function for unmarshalling from datasync.LazyValue.
+func (p *Plugin) unmarshalLazyValue(key string, lazy datasync.LazyValue) (proto.Message, error) {
 	model, err := models.GetModelForKey(key)
 	if err != nil {
 		return nil, err

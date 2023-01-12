@@ -70,7 +70,11 @@ func (c *client) ResyncConfig(items ...proto.Message) error {
 	for _, item := range items {
 		key, err := models.GetKey(item)
 		if err != nil {
-			return err
+			i, ok := item.(*generic.DeferredItem)
+			if !ok {
+				return err
+			}
+			key = i.GetKey()
 		}
 		txn.Put(key, item)
 	}
@@ -150,7 +154,11 @@ func (c *client) UpdateItems(ctx context.Context, items []UpdateItem, resync boo
 	for _, ui := range items {
 		key, err := models.GetKey(ui.Message)
 		if err != nil {
-			return nil, err
+			i, ok := ui.Message.(*generic.DeferredItem)
+			if !ok {
+				return nil, err
+			}
+			key = i.GetKey()
 		}
 		txn.Put(key, ui.Message)
 		_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)
@@ -191,7 +199,13 @@ func (c *client) DeleteItems(ctx context.Context, items []UpdateItem) ([]*Update
 	for _, ui := range items {
 		key, err := models.GetKey(ui.Message)
 		if err != nil {
-			return nil, err
+			// FIXME: how does deleting config that has no model work?
+			// 	do we defer the delete request? Bunch it into one big txn and let it rip?
+			i, ok := ui.Message.(*generic.DeferredItem)
+			if !ok {
+				return nil, err
+			}
+			key = i.GetKey()
 		}
 		txn.Delete(key)
 		_, withDataSrc := contextdecorator.DataSrcFromContext(ctx)

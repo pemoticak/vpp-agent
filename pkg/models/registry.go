@@ -240,3 +240,7 @@ func (r *LocalRegistry) Register(x interface{}, spec Spec, opts ...ModelOption) 
 	}
 	return model, nil
 }
+
+func (r LocalRegistry) Subscribe() <-chan KnownModel {
+	return r.proxied.Subscribe()
+}

@@ -24,6 +24,10 @@ import (
 	"go.ligato.io/vpp-agent/v3/proto/ligato/generic"
 )
 
+type Broadcaster[T any] interface {
+	Subscribe() <-chan T
+}
+
 // ModelInfo represents model information retrieved using meta service
 type ModelInfo struct {
 	*generic.ModelDetail
@@ -34,6 +38,7 @@ type ModelInfo struct {
 
 // Registry defines model registry for managing registered models
 type Registry interface {
+	Broadcaster[KnownModel]
 	// GetModel returns registered model for the given model name
 	// or error if model is not found.
 	GetModel(name string) (KnownModel, error)
@@ -62,6 +67,9 @@ type Registry interface {
 type KnownModel interface {
 	// Spec returns model specification for the model.
 	Spec() *Spec
+
+	// Info returns model information for the model.
+	Info() *ModelInfo
 
 	// ModelDetail returns descriptor for the model.
 	ModelDetail() *generic.ModelDetail

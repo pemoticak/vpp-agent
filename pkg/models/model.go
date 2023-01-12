@@ -44,6 +44,14 @@ func (m *LocallyKnownModel) Spec() *Spec {
 	return &spec
 }
 
+// Info returns model information for the model.
+func (m *LocallyKnownModel) Info() *ModelInfo {
+	return &ModelInfo{
+		m.ModelDetail(),
+		m.proto.ProtoReflect().New().Descriptor(),
+	}
+}
+
 // ModelDetail returns descriptor for the model.
 func (m *LocallyKnownModel) ModelDetail() *generic.ModelDetail {
 	return &generic.ModelDetail{

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client_test
+package util_test
 
 import (
 	"bytes"
@@ -26,9 +26,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"go.ligato.io/vpp-agent/v3/client"
 	"go.ligato.io/vpp-agent/v3/pkg/models"
 	testmodel "go.ligato.io/vpp-agent/v3/pkg/models/testdata/proto"
+	"go.ligato.io/vpp-agent/v3/pkg/util"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/configurator"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/vpp"
 	interfaces "go.ligato.io/vpp-agent/v3/proto/ligato/vpp/interfaces"
@@ -67,7 +67,7 @@ func TestYamlCompatibility(t *testing.T) {
 
 	// create dynamic config
 	// Note: for revealing dynamic structure use fmt.Println(client.ExportDynamicConfigStructure(dynConfig))
-	dynConfig, err := client.NewDynamicConfig(knownModels)
+	dynConfig, err := util.NewDynamicConfig(knownModels)
 	Expect(err).ShouldNot(HaveOccurred(), "can't create dynamic config")
 
 	// Hardcoded Config filled with data -> YAML -> JSON -> load into empty dynamic Config -> YAML
@@ -114,7 +114,7 @@ func TestDynamicConfigWithThirdPartyModel(t *testing.T) {
 
 	// create dynamic config
 	// Note: for revealing dynamic sctructure use fmt.Println(client.ExportDynamicConfigStructure(dynConfig))
-	dynConfig, err := client.NewDynamicConfig(knownModels)
+	dynConfig, err := util.NewDynamicConfig(knownModels)
 	Expect(err).ShouldNot(HaveOccurred(), "can't create dynamic config")
 
 	// test loading of 3rd party model data into dynamic config

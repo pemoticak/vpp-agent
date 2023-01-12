@@ -44,6 +44,7 @@ import (
 	"go.ligato.io/vpp-agent/v3/client"
 	"go.ligato.io/vpp-agent/v3/cmd/agentctl/api/types"
 	"go.ligato.io/vpp-agent/v3/pkg/models"
+	"go.ligato.io/vpp-agent/v3/pkg/util"
 	"go.ligato.io/vpp-agent/v3/pkg/version"
 	"go.ligato.io/vpp-agent/v3/plugins/configurator"
 	kvs "go.ligato.io/vpp-agent/v3/plugins/kvscheduler/api"
@@ -416,7 +417,7 @@ func buildJsonSchema(query url.Values) (*pluginpb.CodeGeneratorResponse, error) 
 	if err != nil {
 		return nil, fmt.Errorf("can't get registered models: %w", err)
 	}
-	config, err := client.NewDynamicConfig(knownModels)
+	config, err := util.NewDynamicConfig(knownModels)
 	if err != nil {
 		return nil, fmt.Errorf("can't create dynamic config: %w", err)
 	}
@@ -546,7 +547,7 @@ func (p *Plugin) validationHandler(formatter *render.Render) http.HandlerFunc {
 			p.internalError("can't get registered models", err, w, formatter)
 			return
 		}
-		config, err := client.NewDynamicConfig(knownModels)
+		config, err := util.NewDynamicConfig(knownModels)
 		if err != nil {
 			p.internalError("can't create dynamic config", err, w, formatter)
 			return
@@ -568,7 +569,7 @@ func (p *Plugin) validationHandler(formatter *render.Render) http.HandlerFunc {
 		}
 
 		// extracting proto messages from dynamically created config structure
-		configMessages, err := client.DynamicConfigExport(config)
+		configMessages, err := util.DynamicConfigExport(config)
 		if err != nil {
 			p.internalError("can't extract single proto message "+
 				"from one dynamic config to validate them per proto message", err, w, formatter)
@@ -629,8 +630,8 @@ func (p *Plugin) ConvertValidationErrorOutput(validationErrors *kvscheduler.Inva
 			nonDerivedMessage = messageError.ParentMessage()
 		}
 		messageModel := nameToModel[nonDerivedMessage.ProtoReflect().Descriptor().FullName()]
-		groupFieldName := client.DynamicConfigGroupFieldNaming(messageModel)
-		modelFieldProtoName, modelFieldName := client.DynamicConfigKnownModelFieldNaming(messageModel)
+		groupFieldName := util.DynamicConfigGroupFieldNaming(messageModel)
+		modelFieldProtoName, modelFieldName := util.DynamicConfigKnownModelFieldNaming(messageModel)
 		invalidMessageFields := messageError.InvalidFields()
 		invalidMessageFieldsStr := invalidMessageFields[0]
 		if invalidMessageFieldsStr == "" {
@@ -753,7 +754,7 @@ func (p *Plugin) configurationGetHandler(formatter *render.Render) http.HandlerF
 			p.internalError("failed to get registered models", err, w, formatter)
 			return
 		}
-		config, err := client.NewDynamicConfig(knownModels)
+		config, err := util.NewDynamicConfig(knownModels)
 		if err != nil {
 			p.internalError("failed to create empty "+
 				"all-config proto message dynamically", err, w, formatter)
@@ -809,7 +810,7 @@ func (p *Plugin) configurationUpdateHandler(formatter *render.Render) http.Handl
 			p.internalError("failed to get registered models", err, w, formatter)
 			return
 		}
-		config, err := client.NewDynamicConfig(knownModels)
+		config, err := util.NewDynamicConfig(knownModels)
 		if err != nil {
 			p.internalError("can't create all-config proto message dynamically", err, w, formatter)
 			return
@@ -837,7 +838,7 @@ func (p *Plugin) configurationUpdateHandler(formatter *render.Render) http.Handl
 
 		// extracting proto messages from dynamically created config structure
 		// (further processing needs single proto messages and not one big hierarchical config)
-		configMessages, err := client.DynamicConfigExport(config)
+		configMessages, err := util.DynamicConfigExport(config)
 		if err != nil {
 			p.internalError("can't extract single configuration proto messages "+
 				"from one big configuration proto message", err, w, formatter)
