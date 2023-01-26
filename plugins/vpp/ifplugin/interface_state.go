@@ -78,6 +78,7 @@ func (c *InterfaceStateUpdater) Init(
 ) error {
 	c.log = logger.NewLogger("if-state")
 
+	c.log.Debug("[DEBUG] INIT STARTING")
 	// Mappings
 	c.swIfIndexes = swIfIndexes
 
@@ -119,6 +120,7 @@ func (c *InterfaceStateUpdater) Init(
 		go c.startUpdatingIfStateDetails(c.ctx)
 	}
 
+	c.log.Debug("[DEBUG] INIT ENDING")
 	return nil
 }
 
@@ -183,16 +185,18 @@ func (c *InterfaceStateUpdater) watchVPPNotifications(ctx context.Context) {
 func (c *InterfaceStateUpdater) startUpdatingIfStateDetails(ctx context.Context) {
 	defer c.wg.Done()
 
+	c.log.Debugf("[DEBUG] START UPDATING FUNCTION ENTERED (%d interfaces)", len(c.ifsForUpdate))
 	/*timer := time.NewTimer(PeriodicPollingPeriod)
 	  if !ifUpdateTimer.Stop() {
 	  	<-ifUpdateTimer.C
 	  }
 	  ifUpdateTimer.Reset(PeriodicPollingPeriod)*/
 
-	tick := time.NewTicker(StateUpdateDelay)
+	tick := time.NewTicker(PeriodicPollingPeriod)
 	for {
 		select {
 		case <-tick.C:
+			c.log.Debugf("[DEBUG] START UPDATING TICK RECEIVED (%v tick period)", PeriodicPollingPeriod)
 			c.doUpdatesIfStateDetails()
 
 		case <-ctx.Done():
@@ -206,10 +210,12 @@ func (c *InterfaceStateUpdater) startUpdatingIfStateDetails(ctx context.Context)
 func (c *InterfaceStateUpdater) startReadingCounters(ctx context.Context) {
 	defer c.wg.Done()
 
+	c.log.Debug("[DEBUG] START READING FUNCTION ENTERED")
 	tick := time.NewTicker(PeriodicPollingPeriod)
 	for {
 		select {
 		case <-tick.C:
+			c.log.Debugf("[DEBUG] START READING TICK RECEIVED (%v tick period)", PeriodicPollingPeriod)
 			statsClient := c.vppClient.Stats()
 			if statsClient == nil {
 				c.log.Warnf("VPP stats client not available")
@@ -235,15 +241,19 @@ func (c *InterfaceStateUpdater) processIfMetaCreate(swIfIdx uint32) {
 }
 
 func (c *InterfaceStateUpdater) doUpdatesIfStateDetails() {
+	c.log.Debugf("[DEBUG] DO UPDATES FUNCTION ENTERED (%d interfaces)", len(c.ifsForUpdate))
 	c.access.Lock()
 
+	c.log.Debugf("[DEBUG] DO UPDATES LOCK ACQUIRED (%d interfaces)", len(c.ifsForUpdate))
 	// prevent reading stats if last interface notification has been
 	// received in less than polling period
 	if time.Since(c.lastIfMeta) < StateUpdateDelay {
+		c.log.Debugf("[DEBUG] UPDATE: NOTIFICATION RECEIVED TOO RECENTLY (%d interfaces)", len(c.ifsForUpdate))
 		c.access.Unlock()
 		return
 	}
 	if len(c.ifsForUpdate) == 0 {
+		c.log.Debugf("[DEBUG] NO INTERFACES TO UPDATE (%d interfaces)", len(c.ifsForUpdate))
 		c.access.Unlock()
 		return
 	}
@@ -281,12 +291,15 @@ func (c *InterfaceStateUpdater) doUpdatesIfStateDetails() {
 
 // doInterfaceStatsRead dumps statistics using interface filter and processes them
 func (c *InterfaceStateUpdater) doInterfaceStatsRead(statsClient govppapi.StatsProvider) {
+	c.log.Debug("[DEBUG] DO READS FUNCTION ENTERED")
 	c.access.Lock()
 	defer c.access.Unlock()
 
+	c.log.Debug("[DEBUG] DO READS FUNCTION LOCK ACQUIRED")
 	// prevent reading stats if last interface notification has been
 	// received in less than polling period
 	if time.Since(c.lastIfNotif) < StateUpdateDelay {
+		c.log.Debug("[DEBUG] READ: NOTIFICATION RECEIVED TOO RECENTLY")
 		return
 	}
 
@@ -296,6 +309,7 @@ func (c *InterfaceStateUpdater) doInterfaceStatsRead(statsClient govppapi.StatsP
 		c.log.Errorf("failed to read statistics data: %v", err)
 	}
 	if len(c.ifStats.Interfaces) == 0 {
+		c.log.Debug("[DEBUG] DO READS FUNCTION 0 INTERFACES, RETURNING")
 		return
 	}
 

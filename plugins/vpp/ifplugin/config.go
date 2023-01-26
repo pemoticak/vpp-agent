@@ -22,10 +22,10 @@ import (
 var (
 	// PeriodicPollingPeriod between statistics reads
 	// TODO  should be configurable
-	PeriodicPollingPeriod = time.Second * 5
+	PeriodicPollingPeriod = time.Second * 10
 
 	// StateUpdateDelay defines delay before dumping states
-	StateUpdateDelay = time.Second * 3
+	StateUpdateDelay = time.Second * 6
 
 	disableInterfaceStats   = os.Getenv("DISABLE_INTERFACE_STATS") != ""
 	disableStatusPublishing = os.Getenv("DISABLE_STATUS_PUBLISHING") != ""
