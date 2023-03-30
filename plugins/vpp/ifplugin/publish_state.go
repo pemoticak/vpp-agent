@@ -96,6 +96,7 @@ func (p *IfPlugin) publishIfStateEvents() {
 	for {
 		select {
 		case ifState := <-p.ifStateChan:
+			p.ifStateUpdater.access.Lock()
 			p.publishLock.Lock()
 			key := interfaces.InterfaceStateKey(ifState.State.Name)
 
@@ -151,6 +152,7 @@ func (p *IfPlugin) publishIfStateEvents() {
 			}
 
 			p.publishLock.Unlock()
+			p.ifStateUpdater.access.Unlock()
 
 		case <-p.ctx.Done():
 			// Stop watching for state data updates.

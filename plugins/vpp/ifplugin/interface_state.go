@@ -435,6 +435,8 @@ func (c *InterfaceStateUpdater) updateIfStateFlags(vppMsg *vppcalls.InterfaceEve
 
 // updateIfStateDetails updates the interface state data in memory from provided VPP details message.
 func (c *InterfaceStateUpdater) updateIfStateDetails(ifDetails *vppcalls.InterfaceState) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	ifState, found := c.getIfStateDataWLookup(ifDetails.SwIfIndex)
 	if !found {
 		return
