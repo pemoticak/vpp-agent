@@ -39,7 +39,7 @@ func MarshalItemUsingModelRegistry(pb proto.Message, modelRegistry Registry) (*a
 	model, err := GetModelFromRegistryFor(pb, modelRegistry)
 	if err != nil {
 		return nil, errors.Errorf("can't find known model "+
-			"for message due to: %v (message = %+v)", err, pb)
+			"for message due to: %v (message = %+v), ALL MODELS: %+v", err, pb, modelRegistry.RegisteredModels())
 	}
 	name, err := model.InstanceName(pb)
 	if err != nil {

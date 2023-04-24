@@ -49,6 +49,11 @@ func NameTemplate(t string) NameFunc {
 		if dynMessage, ok := x.(*dynamicpb.Message); ok {
 			var err error
 			x, err = resolveDynamicProtoModelName(dynMessage)
+			m, _ := GetModelFor(dynMessage)
+			if m.LocalGoType() == nil {
+				t = replaceFieldNamesInNameTemplate(dynMessage.Descriptor(), t)
+				tmpl, _ = tmpl.Parse(t)
+			}
 			if err != nil {
 				return "", err
 			}

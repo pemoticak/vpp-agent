@@ -897,7 +897,7 @@ func (p *Plugin) configurationUpdateHandler(formatter *render.Render) http.Handl
 			key, err := models.GetKey(message)
 			if err != nil {
 				errMsg := fmt.Sprintf("can't get model key for dynamic message "+
-					"due to: %v (dynamic message=%v)", err, dynamicMessage)
+					"due to: %v (dynamic message=%v), ALL MODELS: %+v", err, dynamicMessage, models.RegisteredModels())
 				p.Log.Error(internalErrorLogPrefix + errMsg)
 				p.logError(formatter.JSON(w, http.StatusInternalServerError, errMsg))
 			}
