@@ -23,7 +23,7 @@ message ModelSpec {
 // ModelDetail represents info about model details.
 message ModelDetail {
 
-    // Spec is a specificaiton the model was registered with.
+    // Spec is a specification the model was registered with.
     ModelSpec spec = 1;
 
     // ProtoName is a name of protobuf message representing the model.
