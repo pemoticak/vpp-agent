@@ -53,7 +53,7 @@ require (
 	github.com/armon/go-metrics v0.3.9 // indirect
 	github.com/bennyscetbun/jsongo v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bshuster-repo/logrus-logstash-hook v0.4.1 // indirect
+	github.com/bshuster-repo/logrus-logstash-hook v1.1.0 // indirect
 	github.com/bsm/sarama-cluster v2.1.15+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -130,3 +130,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.0 // indirect
 )
+
+replace go.ligato.io/cn-infra/v2 => github.com/pemoticak/cn-infra/v2 v2.0.0-20230818154753-f0e8066856a8
